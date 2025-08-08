@@ -1,0 +1,475 @@
+'use client'
+
+import React, { useState } from 'react'
+import { useWallet, useConnection } from '@solana/wallet-adapter-react'
+import { PublicKey, Transaction, SystemProgram, Keypair } from '@solana/web3.js'
+import { Program, AnchorProvider, web3, BN, Idl } from '@coral-xyz/anchor'
+import { TOKEN_2022_PROGRAM_ID } from '@solana/spl-token'
+import {
+    createAssociatedTokenAccountInstruction,
+    getAssociatedTokenAddressSync,
+    createMintToInstruction,
+    createTransferCheckedInstruction,
+    getMint,
+    getAccount,
+    TOKEN_PROGRAM_ID
+} from '@solana/spl-token'
+import toast from 'react-hot-toast'
+import { Droplets, Loader2, Plus, CheckCircle, Copy, ExternalLink } from 'lucide-react'
+
+// Program ID - update after deployment
+const AMM_PROGRAM_ID = new PublicKey(process.env.NEXT_PUBLIC_AMM_PROGRAM_ID || "AMM1111111111111111111111111111111111111111")
+
+// Minimal IDL for the AMM program
+const AMM_IDL: Idl = {
+    version: "0.1.0",
+    name: "amm",
+    instructions: [
+        {
+            name: "initializePool",
+            accounts: [
+                { name: "authority", isMut: true, isSigner: true },
+                { name: "pool", isMut: true, isSigner: false },
+                { name: "mintA", isMut: false, isSigner: false },
+                { name: "mintB", isMut: false, isSigner: false },
+                { name: "vaultA", isMut: true, isSigner: false },
+                { name: "vaultB", isMut: true, isSigner: false },
+                { name: "tokenProgram", isMut: false, isSigner: false },
+                { name: "systemProgram", isMut: false, isSigner: false },
+                { name: "rent", isMut: false, isSigner: false }
+            ],
+            args: [{ name: "feeRate", type: "u64" }]
+        },
+        {
+            name: "addLiquidity",
+            accounts: [
+                { name: "user", isMut: true, isSigner: true },
+                { name: "pool", isMut: true, isSigner: false },
+                { name: "mintA", isMut: false, isSigner: false },
+                { name: "mintB", isMut: false, isSigner: false },
+                { name: "vaultA", isMut: true, isSigner: false },
+                { name: "vaultB", isMut: true, isSigner: false },
+                { name: "userTokenAccountA", isMut: true, isSigner: false },
+                { name: "userTokenAccountB", isMut: true, isSigner: false },
+                { name: "tokenProgram", isMut: false, isSigner: false }
+            ],
+            args: [
+                { name: "amountA", type: "u64" },
+                { name: "amountB", type: "u64" }
+            ]
+        }
+    ],
+    accounts: [
+        {
+            name: "pool",
+            type: {
+                kind: "struct",
+                fields: [
+                    { name: "authority", type: "publicKey" },
+                    { name: "mintA", type: "publicKey" },
+                    { name: "mintB", type: "publicKey" },
+                    { name: "vaultA", type: "publicKey" },
+                    { name: "vaultB", type: "publicKey" },
+                    { name: "feeRate", type: "u64" }
+                ]
+            }
+        }
+    ],
+    types: [],
+    events: [],
+    errors: []
+}
+
+interface PoolData {
+    address: string
+    vaultA: string
+    vaultB: string
+    signature: string
+}
+
+interface FormData {
+    tokenA: string
+    tokenB: string
+    feeRate: number
+    initialLiquidityA: number
+    initialLiquidityB: number
+}
+
+export default function PoolCreator() {
+    const { publicKey, wallet, signTransaction } = useWallet()
+    const { connection } = useConnection()
+    const [loading, setLoading] = useState(false)
+    const [createdPool, setCreatedPool] = useState<PoolData | null>(null)
+    const [formData, setFormData] = useState<FormData>({
+        tokenA: '',
+        tokenB: 'So11111111111111111111111111111111111111112',
+        feeRate: 25,
+        initialLiquidityA: 1000,
+        initialLiquidityB: 1
+    })
+
+    const createPool = async () => {
+        if (!publicKey || !wallet || !signTransaction) {
+            toast.error('Please connect your wallet')
+            return
+        }
+
+        setLoading(true)
+
+        try {
+            // Create Anchor-compatible wallet
+            const anchorWallet = {
+                publicKey: publicKey,
+                signTransaction: signTransaction,
+                signAllTransactions: async (txs: Transaction[]) => {
+                    const signedTxs: Transaction[] = []
+                    for (const tx of txs) {
+                        signedTxs.push(await signTransaction(tx))
+                    }
+                    return signedTxs
+                }
+            }
+
+            const provider = new AnchorProvider(connection, anchorWallet, AnchorProvider.defaultOptions())
+            const program = new Program(AMM_IDL, AMM_PROGRAM_ID, provider)
+
+            const mintA = new PublicKey(formData.tokenA)
+            const mintB = new PublicKey(formData.tokenB)
+            const feeRate = new BN(formData.feeRate)
+
+            // Generate pool keypair
+            const poolKeypair = Keypair.generate()
+
+            // Calculate vault addresses
+            const vaultA = getAssociatedTokenAddressSync(mintA, poolKeypair.publicKey, true)
+            const vaultB = getAssociatedTokenAddressSync(mintB, poolKeypair.publicKey, true)
+
+            const tx = await program.methods
+                .initializePool(feeRate)
+                .accounts({
+                    authority: publicKey,
+                    pool: poolKeypair.publicKey,
+                    mintA,
+                    mintB,
+                    vaultA,
+                    vaultB,
+                    tokenProgram: TOKEN_PROGRAM_ID,
+                    systemProgram: SystemProgram.programId,
+                    rent: web3.SYSVAR_RENT_PUBKEY
+                })
+                .signers([poolKeypair])
+                .transaction()
+
+            const signature = await sendTransaction(tx, connection, {
+                signers: [poolKeypair]
+            })
+
+            await connection.confirmTransaction(signature, 'confirmed')
+
+            setCreatedPool({
+                address: poolKeypair.publicKey.toString(),
+                vaultA: vaultA.toString(),
+                vaultB: vaultB.toString(),
+                signature
+            })
+
+            toast.success('Pool created successfully!')
+        } catch (error: any) {
+            console.error('Pool creation failed:', error)
+            toast.error(error.message || 'Failed to create pool')
+        } finally {
+            setLoading(false)
+        }
+    }
+
+    const addLiquidity = async () => {
+        if (!publicKey || !wallet || !createdPool || !signTransaction) {
+            toast.error('Please create a pool first')
+            return
+        }
+
+        setLoading(true)
+
+        try {
+            // Create Anchor-compatible wallet
+            const anchorWallet = {
+                publicKey: publicKey,
+                signTransaction: signTransaction,
+                signAllTransactions: async (txs: Transaction[]) => {
+                    const signedTxs: Transaction[] = []
+                    for (const tx of txs) {
+                        signedTxs.push(await signTransaction(tx))
+                    }
+                    return signedTxs
+                }
+            }
+
+            const provider = new AnchorProvider(connection, anchorWallet, AnchorProvider.defaultOptions())
+            const program = new Program(AMM_IDL, AMM_PROGRAM_ID, provider)
+
+            const poolAddress = new PublicKey(createdPool.address)
+            const amountA = new BN(formData.initialLiquidityA * 10**6)
+            const amountB = new BN(formData.initialLiquidityB * 10**9)
+
+            const tx = await program.methods
+                .addLiquidity(amountA, amountB)
+                .accounts({
+                    user: publicKey,
+                    pool: poolAddress,
+                    mintA: new PublicKey(formData.tokenA),
+                    mintB: new PublicKey(formData.tokenB),
+                    vaultA: new PublicKey(createdPool.vaultA),
+                    vaultB: new PublicKey(createdPool.vaultB),
+                    userTokenAccountA: getAssociatedTokenAddressSync(new PublicKey(formData.tokenA), publicKey),
+                    userTokenAccountB: getAssociatedTokenAddressSync(new PublicKey(formData.tokenB), publicKey),
+                    tokenProgram: TOKEN_PROGRAM_ID
+                })
+                .transaction()
+
+            const signature = await sendTransaction(tx, connection)
+            await connection.confirmTransaction(signature, 'confirmed')
+
+            toast.success('Liquidity added successfully!')
+        } catch (error: any) {
+            console.error('Liquidity addition failed:', error)
+            toast.error(error.message || 'Failed to add liquidity')
+        } finally {
+            setLoading(false)
+        }
+    }
+
+    const sendTransaction = async (transaction: Transaction, connection: any, options?: any) => {
+        if (!signTransaction) {
+            throw new Error('Wallet not connected')
+        }
+
+        const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash()
+        transaction.recentBlockhash = blockhash
+        transaction.feePayer = publicKey!
+
+        const signed = await signTransaction(transaction)
+        
+        const signature = await connection.sendRawTransaction(signed.serialize(), {
+            skipPreflight: false,
+            preflightCommitment: 'confirmed'
+        })
+
+        return signature
+    }
+
+    const copyToClipboard = (text: string, label: string) => {
+        navigator.clipboard.writeText(text)
+        toast.success(`${label} copied!`)
+    }
+
+    return (
+        <div className="glass-card">
+            <div className="flex items-center space-x-3 mb-6">
+                <div className="w-10 h-10 bg-gradient-to-r from-blue-500 to-cyan-500 rounded-xl flex items-center justify-center">
+                    <Droplets className="w-6 h-6 text-white" />
+                </div>
+                <div>
+                    <h2 className="text-2xl font-bold text-white">Create Liquidity Pool</h2>
+                    <p className="text-gray-400">Initialize a real AMM pool on Solana</p>
+                </div>
+            </div>
+
+            {createdPool && (
+                <div className="bg-green-500/10 border border-green-500/20 rounded-lg p-6 mb-6">
+                    <div className="flex items-center space-x-2 mb-4">
+                        <CheckCircle className="w-6 h-6 text-green-400" />
+                        <span className="text-green-400 font-semibold text-lg">Pool Created Successfully!</span>
+                    </div>
+
+                    <div className="space-y-3">
+                        <div>
+                            <p className="text-sm text-gray-400 mb-1">Pool Address:</p>
+                            <div className="flex items-center space-x-2 bg-gray-800 rounded-lg p-3">
+                                <span className="font-mono text-sm text-white flex-1">{createdPool.address}</span>
+                                <button onClick={() => copyToClipboard(createdPool.address, 'Pool address')}>
+                                    <Copy className="w-4 h-4 text-gray-400" />
+                                </button>
+                            </div>
+                        </div>
+
+                        <div className="grid grid-cols-2 gap-3">
+                            <div>
+                                <p className="text-sm text-gray-400 mb-1">Vault A:</p>
+                                <div className="bg-gray-800 rounded-lg p-2">
+                                    <span className="font-mono text-xs text-white">{createdPool.vaultA.slice(0, 20)}...</span>
+                                </div>
+                            </div>
+                            <div>
+                                <p className="text-sm text-gray-400 mb-1">Vault B:</p>
+                                <div className="bg-gray-800 rounded-lg p-2">
+                                    <span className="font-mono text-xs text-white">{createdPool.vaultB.slice(0, 20)}...</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div>
+                            <p className="text-sm text-gray-400 mb-1">Transaction:</p>
+                            <div className="flex items-center space-x-2 bg-gray-800 rounded-lg p-3">
+                                <span className="font-mono text-sm text-white flex-1">{createdPool.signature}</span>
+                                <button onClick={() => copyToClipboard(createdPool.signature, 'Transaction')}>
+                                    <Copy className="w-4 h-4 text-gray-400" />
+                                </button>
+                                <a
+                                    href={`https://explorer.solana.com/tx/${createdPool.signature}?cluster=devnet`}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                >
+                                    <ExternalLink className="w-4 h-4 text-gray-400" />
+                                </a>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            <div className="space-y-6">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                        <label className="block text-sm font-medium text-gray-300 mb-2">
+                            Token A (Token-2022) <span className="text-red-400">*</span>
+                        </label>
+                        <input
+                            type="text"
+                            value={formData.tokenA}
+                            onChange={(e) => setFormData({ ...formData, tokenA: e.target.value })}
+                            className="input-field w-full font-mono text-sm"
+                            placeholder="Enter Token-2022 mint address..."
+                            disabled={loading}
+                        />
+                    </div>
+
+                    <div>
+                        <label className="block text-sm font-medium text-gray-300 mb-2">Token B</label>
+                        <select
+                            value={formData.tokenB}
+                            onChange={(e) => setFormData({ ...formData, tokenB: e.target.value })}
+                            className="input-field w-full"
+                            disabled={loading}
+                        >
+                            <option value="So11111111111111111111111111111111111111112">SOL (Wrapped)</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                        <label className="block text-sm font-medium text-gray-300 mb-2">Fee Rate</label>
+                        <select
+                            value={formData.feeRate}
+                            onChange={(e) => setFormData({ ...formData, feeRate: parseInt(e.target.value) })}
+                            className="input-field w-full"
+                            disabled={loading}
+                        >
+                            <option value={25}>0.25% (25 bp)</option>
+                            <option value={50}>0.50% (50 bp)</option>
+                            <option value={100}>1.00% (100 bp)</option>
+                            <option value={300}>3.00% (300 bp)</option>
+                        </select>
+                    </div>
+
+                    <div>
+                        <label className="block text-sm font-medium text-gray-300 mb-2">Pool Type</label>
+                        <div className="input-field bg-gray-800/50 text-gray-400">
+                            Constant Product (x * y = k)
+                        </div>
+                    </div>
+                </div>
+
+                <div className="bg-gray-800/30 rounded-lg p-4 border border-gray-700">
+                    <h3 className="text-lg font-semibold text-white mb-4">Initial Liquidity</h3>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div>
+                            <label className="block text-sm font-medium text-gray-300 mb-2">Token A Amount</label>
+                            <input
+                                type="number"
+                                value={formData.initialLiquidityA}
+                                onChange={(e) => setFormData({ ...formData, initialLiquidityA: parseFloat(e.target.value) || 0 })}
+                                className="input-field w-full"
+                                placeholder="1000"
+                                min="0"
+                                step="0.000001"
+                                disabled={loading}
+                            />
+                        </div>
+
+                        <div>
+                            <label className="block text-sm font-medium text-gray-300 mb-2">SOL Amount</label>
+                            <input
+                                type="number"
+                                value={formData.initialLiquidityB}
+                                onChange={(e) => setFormData({ ...formData, initialLiquidityB: parseFloat(e.target.value) || 0 })}
+                                className="input-field w-full"
+                                placeholder="1"
+                                min="0"
+                                step="0.000001"
+                                disabled={loading}
+                            />
+                        </div>
+                    </div>
+
+                    <div className="mt-4 p-3 bg-blue-500/10 border border-blue-500/20 rounded-lg">
+                        <p className="text-sm text-blue-300">
+                            <strong>Price:</strong> 1 Token A = {(formData.initialLiquidityB / formData.initialLiquidityA || 0).toFixed(6)} SOL
+                        </p>
+                    </div>
+                </div>
+
+                <div className="flex flex-col sm:flex-row gap-4">
+                    {!createdPool ? (
+                        <button
+                            onClick={createPool}
+                            disabled={loading || !publicKey || !formData.tokenA || !formData.tokenB}
+                            className="btn-primary flex items-center justify-center space-x-2 flex-1 h-12"
+                        >
+                            {loading ? (
+                                <>
+                                    <Loader2 className="w-5 h-5 animate-spin" />
+                                    <span>Creating Pool...</span>
+                                </>
+                            ) : (
+                                <>
+                                    <Droplets className="w-5 h-5" />
+                                    <span>Create Real Pool</span>
+                                </>
+                            )}
+                        </button>
+                    ) : (
+                        <button
+                            onClick={addLiquidity}
+                            disabled={loading || !publicKey}
+                            className="btn-primary flex items-center justify-center space-x-2 flex-1 h-12"
+                        >
+                            {loading ? (
+                                <>
+                                    <Loader2 className="w-5 h-5 animate-spin" />
+                                    <span>Adding Liquidity...</span>
+                                </>
+                            ) : (
+                                <>
+                                    <Plus className="w-5 h-5" />
+                                    <span>Add Initial Liquidity</span>
+                                </>
+                            )}
+                        </button>
+                    )}
+                </div>
+
+                <div className="bg-yellow-500/10 border border-yellow-500/20 rounded-lg p-4">
+                    <h4 className="text-yellow-400 font-semibold mb-2">Requirements</h4>
+                    <ul className="text-sm text-gray-300 space-y-1">
+                        <li>• Token A must be a valid Token-2022 mint address</li>
+                        <li>• You need sufficient SOL for transaction fees (~0.02 SOL)</li>
+                        <li>• You need tokens in your wallet for initial liquidity</li>
+                        <li>• Pool creation is permanent and cannot be undone</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+    )
+}

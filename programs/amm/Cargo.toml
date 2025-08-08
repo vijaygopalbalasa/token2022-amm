@@ -1,0 +1,23 @@
+[package]
+name = "amm"
+version = "0.1.0"
+description = "Token-2022 AMM with Transfer Hook Support"
+edition = "2021"
+
+[lib]
+crate-type = ["cdylib", "lib"]
+name = "amm"
+
+[features]
+no-entrypoint = []
+no-idl = []
+no-log-ix-name = []
+cpi = ["no-entrypoint"]
+default = []
+
+[dependencies]
+anchor-lang = "0.29.0"
+anchor-spl = "0.29.0"
+spl-token-2022 = { version = "0.9.0", features = ["no-entrypoint"] }
+spl-associated-token-account = { version = "2.2.0", features = ["no-entrypoint"] }
+spl-transfer-hook-interface = "0.4.1"

@@ -1,0 +1,45 @@
+{
+    "name": "token2022-amm",
+    "version": "1.0.0",
+    "description": "Token-2022 AMM with Transfer Hook Support",
+    "main": "index.js",
+    "scripts": {
+        "dev": "next dev",
+        "build": "next build",
+        "start": "next start",
+        "lint": "next lint",
+        "anchor-build": "anchor build",
+        "anchor-deploy": "anchor deploy",
+        "test": "anchor test --skip-local-validator"
+    },
+    "dependencies": {
+        "@coral-xyz/anchor": "^0.29.0",
+        "@solana/spl-token": "^0.4.6",
+        "@solana/wallet-adapter-base": "^0.9.23",
+        "@solana/wallet-adapter-react": "^0.15.35",
+        "@solana/wallet-adapter-react-ui": "^0.9.35",
+        "@solana/wallet-adapter-wallets": "^0.19.32",
+        "@solana/web3.js": "^1.91.4",
+        "clsx": "^2.1.1",
+        "lucide-react": "^0.263.1",
+        "next": "14.2.5",
+        "react": "^18.2.0",
+        "react-dom": "^18.2.0",
+        "react-hot-toast": "^2.4.1",
+        "tailwind-merge": "^2.3.0"
+    },
+    "devDependencies": {
+        "@types/node": "^20.14.10",
+        "@types/react": "^18.3.3",
+        "@types/react-dom": "^18.3.0",
+        "autoprefixer": "^10.4.19",
+        "eslint": "^8.57.0",
+        "eslint-config-next": "14.2.5",
+        "postcss": "^8.4.39",
+        "tailwindcss": "^3.4.4",
+        "typescript": "^5.5.3"
+    },
+    "engines": {
+        "node": ">=18.0.0"
+    }
+}

@@ -1,0 +1,72 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+    html {
+        @apply scroll-smooth;
+    }
+
+    body {
+        @apply bg-gray-900 text-white min-h-screen;
+        background: linear-gradient(135deg, #0c0c0c 0%, #1a1a2e 50%, #16213e 100%);
+        background-attachment: fixed;
+    }
+}
+
+@layer components {
+    .glass {
+        @apply bg-white/5 backdrop-blur-xl border border-white/10;
+    }
+
+    .glass-card {
+        @apply glass rounded-2xl p-6 shadow-2xl;
+    }
+
+    .btn-primary {
+        @apply bg-gradient-to-r from-primary-500 to-accent-500 hover:from-primary-600 hover:to-accent-600 text-white font-semibold py-3 px-6 rounded-lg transition-all duration-200 transform hover:scale-105 active:scale-95 shadow-lg;
+    }
+
+    .btn-secondary {
+        @apply glass hover:bg-white/10 text-white font-semibold py-3 px-6 rounded-lg transition-all duration-200 transform hover:scale-105 active:scale-95;
+    }
+
+    .input-field {
+        @apply glass rounded-lg px-4 py-3 text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent transition-all duration-200;
+    }
+
+    .gradient-text {
+        @apply bg-gradient-to-r from-primary-400 to-accent-400 bg-clip-text text-transparent;
+    }
+
+    .animate-glow {
+        animation: glow 2s ease-in-out infinite alternate;
+    }
+}
+
+@keyframes glow {
+    from {
+        box-shadow: 0 0 5px #0ea5e9, 0 0 10px #0ea5e9, 0 0 15px #0ea5e9;
+    }
+
+    to {
+        box-shadow: 0 0 10px #d946ef, 0 0 20px #d946ef, 0 0 30px #d946ef;
+    }
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar {
+    width: 8px;
+}
+
+::-webkit-scrollbar-track {
+    @apply bg-gray-800;
+}
+
+::-webkit-scrollbar-thumb {
+    @apply bg-gradient-to-b from-primary-500 to-accent-500 rounded-full;
+}
+
+::-webkit-scrollbar-thumb:hover {
+    @apply from-primary-600 to-accent-600;
+}

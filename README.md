@@ -19,7 +19,7 @@ This project successfully demonstrates **Token-2022 with Transfer Hooks working 
 
 ## 🎬 **Live Demo**
 
-**🔗 Live Application:** [[http://localhost:3000](https://token2022-amm.vercel.app/)]([http://localhost:3000](https://token2022-amm.vercel.app/))
+**🔗 Live Application:** [https://token2022-amm.vercel.app/](https://token2022-amm.vercel.app/))
 
 **📹 Video Demo:** [https://drive.google.com/file/d/1--4z0_6YTWRxwtP5qSpPgeAOBmC4huXo/view?usp=sharing]
 
